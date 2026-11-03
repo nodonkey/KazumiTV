@@ -18,6 +18,7 @@ import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
+import 'package:kazumi/pages/info/cross_source_resume_dialog.dart';
 import 'package:kazumi/pages/info/source_episode_picker.dart';
 import 'package:kazumi/services/player/source_switch.dart';
 import 'package:kazumi/services/video_source/services.dart';
@@ -176,28 +177,9 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
       var allowHistoryResume = true;
       if (choices.isNotEmpty) {
         final choice = await task.show<int>(
-            builder: (context) => AlertDialog(
-                  title: const Text('同集换源'),
-                  content: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('确认新结果是同一作品和季度后，可继续同集；无法确认时请手动选集，从头播放。'),
-                    SizedBox(
-                        height: 220,
-                        width: 360,
-                        child: ListView.builder(
-                          itemCount: choices.length,
-                          itemBuilder: (context, i) => TextButton(
-                              autofocus: i == 0,
-                              onPressed: () => Navigator.pop(context, i),
-                              child: Text('${roads[choices[i].road].name} · '
-                                  '${roads[choices[i].road].identifier[choices[i].episode - 1]} · '
-                                  '继续 ${choices[i].offset} 秒')),
-                        )),
-                  ]),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, -1),
-                        child: const Text('手动选集'))
-                  ],
+            builder: (_) => CrossSourceResumeDialog(
+                  choices: choices,
+                  roads: roads,
                 ));
         if (choice >= 0 && choice < choices.length) transfer = choices[choice];
         allowHistoryResume = choice >= 0;
