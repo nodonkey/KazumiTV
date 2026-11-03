@@ -312,6 +312,9 @@ class _PopularPageState extends State<PopularPage> with KazumiDialogOwner {
       final first = _focusNodeForChannel(1);
       if (_attached(first)) first.requestFocus();
     });
+    // Focus requests outside build/layout do not schedule a frame on their
+    // own, so the queued callback would wait for unrelated input.
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   KeyEventResult _handleGridKey(

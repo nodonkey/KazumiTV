@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:kazumi/bean/widget/tv_focusable_surface.dart';
 import 'package:kazumi/bean/widget/tv_text_entry.dart';
 
 import 'package:flutter/material.dart';
@@ -56,21 +57,31 @@ Future<RuleAddSource?> showRuleAddDialog(BuildContext context) =>
               ])
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Material(
-                    color: option.$1 == RuleAddSource.catalog
-                        ? colors.secondaryContainer
-                        : colors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(
-                        option.$1 == RuleAddSource.catalog ? 20 : 12),
-                    clipBehavior: Clip.antiAlias,
-                    child: ListTile(
-                      minVerticalPadding: 14,
-                      leading: Icon(option.$2, color: colors.onSurfaceVariant),
-                      title: Text(option.$3),
-                      subtitle: Text(option.$4),
-                      trailing:
-                          const Icon(Icons.arrow_forward_rounded, size: 20),
-                      onTap: () => Navigator.of(context).pop(option.$1),
+                  // Plain ListTiles have no remote focus treatment, so the
+                  // highlighted row was indistinguishable from the static
+                  // catalog card. The surface adds the ring and scrolls the
+                  // row into view inside the dialog body.
+                  child: TvFocusableSurface(
+                    onPressed: () => Navigator.of(context).pop(option.$1),
+                    borderRadius: option.$1 == RuleAddSource.catalog ? 20 : 12,
+                    focusScale: 1,
+                    child: Material(
+                      color: option.$1 == RuleAddSource.catalog
+                          ? colors.secondaryContainer
+                          : colors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(
+                          option.$1 == RuleAddSource.catalog ? 20 : 12),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListTile(
+                        minVerticalPadding: 14,
+                        leading:
+                            Icon(option.$2, color: colors.onSurfaceVariant),
+                        title: Text(option.$3),
+                        subtitle: Text(option.$4),
+                        trailing:
+                            const Icon(Icons.arrow_forward_rounded, size: 20),
+                        onTap: () => Navigator.of(context).pop(option.$1),
+                      ),
                     ),
                   ),
                 ),
@@ -301,18 +312,52 @@ class _RuleDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return AlertDialog(
+    final textTheme = Theme.of(context).textTheme;
+    return Dialog(
       backgroundColor: colors.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      constraints: const BoxConstraints(maxWidth: 560),
       insetPadding: const EdgeInsets.all(24),
-      scrollable: true,
-      icon: Icon(icon, color: colors.secondary, size: 32),
-      title: Text(title),
-      content: SizedBox(width: 480, child: content),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-      actionsOverflowButtonSpacing: 8,
-      actions: actions,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Icon(icon, color: colors.secondary, size: 32),
+              ),
+              const SizedBox(height: 8),
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: textTheme.headlineSmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // AlertDialog's scrollable mode clipped the option list behind
+              // the action bar on short TV viewports; scroll the body instead.
+              Flexible(
+                child: SingleChildScrollView(child: content),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: actions,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -376,6 +376,7 @@ class _CollectLibraryViewState extends State<CollectLibraryView> {
           child: TextField(
           controller: _searchController,
           focusNode: _searchFocus,
+          autofocus: TvMode.enabled,
           textInputAction: TextInputAction.search,
           decoration: InputDecoration(
             hintText: '搜索收藏番剧的名称、别名',
@@ -662,47 +663,50 @@ class _CollectLibraryViewState extends State<CollectLibraryView> {
   }
 
   Widget _sortMenu({required bool expanded}) {
-    final style = ButtonStyle(
-      foregroundColor: WidgetStatePropertyAll(
-          Theme.of(context).colorScheme.onSurfaceVariant),
-      minimumSize: const WidgetStatePropertyAll(Size(48, 48)),
-    );
-    return MenuAnchor(
-      consumeOutsideTap: true,
-      menuChildren: [
+    final foreground = Theme.of(context).colorScheme.onSurfaceVariant;
+    // A route-based menu lets BACK close the menu instead of reaching the
+    // shell, which would leave the collection page.
+    return PopupMenuButton<CollectSort>(
+      tooltip: '排序：${_sort.label}',
+      initialValue: _sort,
+      // The collection page lives in the outlet's nested navigator, whose
+      // maybePop() ignores modal routes. A root route lets TV BACK close the
+      // menu before the shell leaves the page.
+      useRootNavigator: true,
+      onSelected: (sort) {
+        setState(() {
+          _sort = sort;
+          _resetResults();
+        });
+      },
+      itemBuilder: (_) => [
         for (final sort in CollectSort.values)
-          MenuItemButton(
-            trailingIcon:
-                _sort == sort ? const Icon(Icons.check_rounded) : null,
-            onPressed: () {
-              setState(() {
-                _sort = sort;
-                _resetResults();
-              });
-            },
+          CheckedPopupMenuItem<CollectSort>(
+            value: sort,
+            checked: _sort == sort,
             child: Text(sort.label),
           ),
       ],
-      builder: (context, controller, child) {
-        void toggleMenu() =>
-            controller.isOpen ? controller.close() : controller.open();
-
-        return Tooltip(
-          message: '排序：${_sort.label}',
-          child: expanded
-              ? TextButton.icon(
-                  style: style,
-                  onPressed: toggleMenu,
-                  icon: const Icon(Icons.sort_rounded, size: 20),
-                  label: Text(_sort.label),
-                )
-              : IconButton(
-                  style: style,
-                  onPressed: toggleMenu,
-                  icon: const Icon(Icons.sort_rounded, size: 20),
+      child: expanded
+          ? ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sort_rounded, size: 20, color: foreground),
+                    const SizedBox(width: 8),
+                    Text(_sort.label, style: TextStyle(color: foreground)),
+                  ],
                 ),
-        );
-      },
+              ),
+            )
+          : SizedBox(
+              width: 48,
+              height: 48,
+              child: Icon(Icons.sort_rounded, size: 20, color: foreground),
+            ),
     );
   }
 

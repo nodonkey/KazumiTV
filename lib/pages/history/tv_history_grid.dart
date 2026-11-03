@@ -291,27 +291,41 @@ class _TvHistoryGridState extends State<TvHistoryGrid> with RouteAware {
     if (widget.entries.isNotEmpty) {
       return contentGrid;
     } else {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const GeneralEmptyState(
-            icon: Icons.history_rounded,
-            title: '暂无历史记录',
+      // The empty state and its Back action can exceed a short TV viewport;
+      // keep both reachable instead of reporting a bottom overflow.
+      return LayoutBuilder(builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.paddingOf(context).bottom),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const GeneralEmptyState(
+                    icon: Icons.history_rounded,
+                    title: '暂无历史记录',
+                  ),
+                  if (TvMode.enabled)
+                    TextButton.icon(
+                        autofocus: true,
+                        focusNode: _emptyFocus,
+                        onPressed: () {
+                          if (Actions.maybeFind<TvFocusRailIntent>(context) !=
+                              null) {
+                            Actions.invoke(context, const TvFocusRailIntent());
+                          } else {
+                            Navigator.of(context).maybePop();
+                          }
+                        },
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('返回')),
+                ]),
+              ),
+            ),
           ),
-          if (TvMode.enabled)
-            TextButton.icon(
-                autofocus: true,
-                focusNode: _emptyFocus,
-                onPressed: () {
-                  if (Actions.maybeFind<TvFocusRailIntent>(context) != null) {
-                    Actions.invoke(context, const TvFocusRailIntent());
-                  } else {
-                    Navigator.of(context).maybePop();
-                  }
-                },
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('返回')),
-        ]),
-      );
+        );
+      });
     }
   }
 

@@ -170,7 +170,18 @@ class _SearchPageState extends State<SearchPage> {
     if (TvMode.enabled) {
       return Row(children: [
         Expanded(
-            child: TvSearchEntry(controller: _input, onSubmitted: _submit)),
+            child: TvSearchEntry(
+          controller: _input,
+          onSubmitted: _submit,
+          onKeyEvent: (_, event) {
+            if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+                event.logicalKey == LogicalKeyboardKey.arrowDown &&
+                _focusFirstResult()) {
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+        )),
         TextButton.icon(
             focusNode: _qrFocus,
             onPressed: _qrSearch,
@@ -299,7 +310,7 @@ class _SearchPageState extends State<SearchPage> {
     ]);
   }
 
-  List<Widget> _resultSlivers(double width) {
+  (List<BangumiItem>, List<BangumiItem>) _projectedResults() {
     final allItems = _controller.bangumiList.toList();
     final watched = _controller.notShowWatchedBangumis
         ? _controller.loadWatchedBangumiIds()
@@ -311,6 +322,60 @@ class _SearchPageState extends State<SearchPage> {
         .where((item) =>
             !watched.contains(item.id) && !abandoned.contains(item.id))
         .toList();
+    return (allItems, items);
+  }
+
+  Widget _resultSummary(List<BangumiItem> allItems, List<BangumiItem> items) {
+    final busy = _controller.isLoading;
+    final submitted = SearchParser(_submittedQuery!).toFilterState();
+    final summary = _filterSummary(submitted);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+              child: Text('搜索结果',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600))),
+          if (!submitted.isIdSearch)
+            _SearchSortMenu(
+                value: submitted.sort,
+                onChanged: (sort) =>
+                    _applyFilters(submitted.copyWith(sort: sort))),
+          IconButton(
+            tooltip: '筛选番剧',
+            onPressed: _showFilters,
+            icon: Badge(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                isLabelVisible: submitted.hasAdvancedFilters ||
+                    _controller.notShowWatchedBangumis ||
+                    _controller.notShowAbandonedBangumis,
+                smallSize: 6,
+                child: const Icon(Icons.tune_rounded)),
+          ),
+        ]),
+        Text(
+            busy
+                ? '正在搜索…'
+                : '${items.length} 部番剧${items.length < allItems.length ? ' · 隐藏 ${allItems.length - items.length} 部' : ''}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        if (summary.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(summary,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        ],
+      ]),
+    );
+  }
+
+  List<Widget> _resultSlivers(double width, {bool includeSummary = true}) {
+    final (allItems, items) = _projectedResults();
     _visibleResults = items;
     if (TvMode.enabled && !_pruningResultFocus) {
       _pruningResultFocus = true;
@@ -325,54 +390,10 @@ class _SearchPageState extends State<SearchPage> {
     }
     final busy = _controller.isLoading;
     final failed = _controller.isTimeOut;
-    final submitted = SearchParser(_submittedQuery!).toFilterState();
-    final summary = _filterSummary(submitted);
 
     return [
-      SliverToBoxAdapter(
-          child: Padding(
-        padding: const EdgeInsets.only(bottom: 20),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-                child: Text('搜索结果',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600))),
-            if (!submitted.isIdSearch)
-              _SearchSortMenu(
-                  value: submitted.sort,
-                  onChanged: (sort) =>
-                      _applyFilters(submitted.copyWith(sort: sort))),
-            IconButton(
-              tooltip: '筛选番剧',
-              onPressed: _showFilters,
-              icon: Badge(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  isLabelVisible: submitted.hasAdvancedFilters ||
-                      _controller.notShowWatchedBangumis ||
-                      _controller.notShowAbandonedBangumis,
-                  smallSize: 6,
-                  child: const Icon(Icons.tune_rounded)),
-            ),
-          ]),
-          Text(
-              busy
-                  ? '正在搜索…'
-                  : '${items.length} 部番剧${items.length < allItems.length ? ' · 隐藏 ${allItems.length - items.length} 部' : ''}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          if (summary.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(summary,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          ],
-        ]),
-      )),
+      if (includeSummary)
+        SliverToBoxAdapter(child: _resultSummary(allItems, items)),
       if (busy && allItems.isEmpty)
         const SliverToBoxAdapter(child: _SearchLoadingState())
       else if (items.isEmpty)
@@ -447,6 +468,29 @@ class _SearchPageState extends State<SearchPage> {
 
   FocusNode _resultFocusFor(int id) => _resultFocusNodes.putIfAbsent(
       id, () => FocusNode(debugLabel: 'TV search subject $id'));
+
+  /// DOWN from the entry always starts at the first projected result. Relying
+  /// on directional traversal skipped row 1 when the lazy grid realized it
+  /// later in the frame.
+  bool _focusFirstResult() {
+    if (!TvMode.enabled || _visibleResults.isEmpty) return false;
+    final node = _resultFocusFor(_visibleResults.first.id);
+    if (_scroll.hasClients && _scroll.offset > 0) {
+      _scroll.animateTo(0,
+          duration: const Duration(milliseconds: 140), curve: Curves.easeOut);
+    }
+    void apply() {
+      if (!mounted || !_resultFocusAttached(node)) return;
+      node.requestFocus();
+    }
+
+    if (_resultFocusAttached(node)) {
+      apply();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => apply());
+    }
+    return true;
+  }
 
   // Detaching a FocusNode retains its old context. A non-null context alone
   // does not mean a lazy grid child is still mounted and in the focus tree.
@@ -530,9 +574,15 @@ class _SearchPageState extends State<SearchPage> {
             final width = math.min(_hasSearched ? 1120.0 : 760.0,
                 constraints.maxWidth - horizontal * 2);
             final inset = (constraints.maxWidth - width) / 2;
+            // A 411dp-tall landscape screen leaves ~307dp of body height under
+            // the app bar and gesture inset. That is still enough to pin the
+            // header and keep the sort row visible while the grid scrolls.
             final pinSearch = _hasSearched &&
-                constraints.maxHeight >= 420 &&
+                constraints.maxHeight >= 280 &&
                 MediaQuery.textScalerOf(context).scale(16) <= 24;
+            // The summary carries the sort/filter controls. Pinning it keeps
+            // the result context visible while the grid scrolls on TV.
+            final pinSummary = pinSearch && TvMode.enabled;
             Widget scrollView(List<Widget> slivers) => CustomScrollView(
                   controller: _scroll,
                   keyboardDismissBehavior:
@@ -549,13 +599,22 @@ class _SearchPageState extends State<SearchPage> {
                 Padding(
                     padding: EdgeInsets.symmetric(horizontal: inset),
                     child: _header()),
+              if (pinSummary)
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: inset),
+                  child: Observer(builder: (_) {
+                    final (allItems, items) = _projectedResults();
+                    return _resultSummary(allItems, items);
+                  }),
+                ),
               Expanded(
                   child: _hasSearched
                       ? Observer(
                           builder: (_) => scrollView([
                                 if (!pinSearch)
                                   SliverToBoxAdapter(child: _header()),
-                                ..._resultSlivers(width),
+                                ..._resultSlivers(width,
+                                    includeSummary: !pinSummary),
                               ]))
                       : scrollView([
                           SliverToBoxAdapter(child: _header()),

@@ -25,6 +25,7 @@ import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/plugins/anti_crawler_config.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
+import 'package:kazumi/services/platform/tv_mode.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/player/cross_source_resume.dart';
 import 'package:kazumi/services/storage/storage.dart';

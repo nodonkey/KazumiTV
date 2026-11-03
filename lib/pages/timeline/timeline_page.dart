@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
@@ -35,6 +36,36 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage> {
   TimelineController get _controller => widget.controller;
   late final bool _showRating;
+  final _weekFocus = FocusNode(debugLabel: 'Timeline weekday selector');
+  final _cardFocusNodes = <String, FocusNode>{};
+  bool _weekFocused = false;
+
+  FocusNode _cardFocusNode(int day, BangumiItem item) =>
+      _cardFocusNodes.putIfAbsent('$day:${item.id}',
+          () => FocusNode(debugLabel: 'Timeline day $day ${item.id}'));
+
+  void _focusCard(FocusNode node) {
+    void request() {
+      if (mounted && node.context != null && node.canRequestFocus) {
+        node.requestFocus();
+      }
+    }
+
+    if (node.context != null) {
+      request();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => request());
+    }
+  }
+
+  @override
+  void dispose() {
+    _weekFocus.dispose();
+    for (final node in _cardFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -169,13 +200,68 @@ class _TimelinePageState extends State<TimelinePage> {
                 loading: loading, compact: constraints.maxHeight < 500);
         final weekGap = TvMode.enabled ? 8.0 : 16.0;
         final weekHeight = _TimelineWeekSelector.heightFor(scaler) + weekGap;
+        final tabs = TvMode.enabled ? DefaultTabController.of(context) : null;
+        Widget weekBar = _TimelineWeekSelector(
+          counts: calendar.map((day) => day.length).toList(),
+          todayIndex: currentSeason ? today.weekday - 1 : null,
+          isLoading: loading || failed,
+        );
+        if (TvMode.enabled) {
+          final colors = theme.colorScheme;
+          weekBar = Focus(
+            focusNode: _weekFocus,
+            autofocus: true,
+            // The bar is one remote-control stop; arrows change the day and
+            // move into the grid instead of visiting seven hidden tab stops.
+            descendantsAreFocusable: false,
+            descendantsAreTraversable: false,
+            onFocusChange: (focused) {
+              if (mounted && _weekFocused != focused) {
+                setState(() => _weekFocused = focused);
+              }
+            },
+            onKeyEvent: (_, event) {
+              if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                return KeyEventResult.ignored;
+              }
+              final controller = tabs;
+              if (controller == null) return KeyEventResult.ignored;
+              final key = event.logicalKey;
+              if (key == LogicalKeyboardKey.arrowLeft ||
+                  key == LogicalKeyboardKey.arrowRight) {
+                final delta = key == LogicalKeyboardKey.arrowLeft ? -1 : 1;
+                controller.animateTo((controller.index + delta + 7) % 7);
+                return KeyEventResult.handled;
+              }
+              if (key == LogicalKeyboardKey.arrowDown) {
+                final day = controller.index;
+                final items = calendar[day];
+                if (items.isNotEmpty) {
+                  _focusCard(_cardFocusNode(day, items.first));
+                }
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: AnimatedContainer(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 90),
+              curve: Curves.easeOut,
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: _weekFocused ? colors.primary : Colors.transparent,
+                  width: 3,
+                ),
+              ),
+              child: weekBar,
+            ),
+          );
+        }
         final weekSelector = Padding(
           padding: EdgeInsets.fromLTRB(inset, 0, inset, weekGap),
-          child: _TimelineWeekSelector(
-            counts: calendar.map((day) => day.length).toList(),
-            todayIndex: currentSeason ? today.weekday - 1 : null,
-            isLoading: loading || failed,
-          ),
+          child: weekBar,
         );
         Widget dayContent(double viewportHeight) =>
             loading && calendar.every((day) => day.isEmpty)
@@ -455,6 +541,21 @@ class _TimelinePageState extends State<TimelinePage> {
                     compact: compact,
                     showRating: _showRating,
                     isWatching: watchingIds.contains(item.id),
+                    focusNode:
+                        TvMode.enabled ? _cardFocusNode(day, item) : null,
+                    onKeyEvent: TvMode.enabled
+                        ? (_, event) {
+                            if (index < columns &&
+                                (event is KeyDownEvent ||
+                                    event is KeyRepeatEvent) &&
+                                event.logicalKey ==
+                                    LogicalKeyboardKey.arrowUp) {
+                              _weekFocus.requestFocus();
+                              return KeyEventResult.handled;
+                            }
+                            return KeyEventResult.ignored;
+                          }
+                        : null,
                     onTap: () => context.pushNamed('/info/', arguments: item),
                   );
                 },

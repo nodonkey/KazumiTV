@@ -210,24 +210,66 @@ class _SettingsPageState extends State<SettingsPage> {
     return KeyEventResult.handled;
   }
 
-  void _enterPane() {
+  bool _isHidden(FocusNode node) {
+    final context = node.context;
+    if (context == null || !context.mounted) return true;
+    var hidden = false;
+    context.visitAncestorElements((element) {
+      if (element.widget is Offstage && (element.widget as Offstage).offstage) {
+        hidden = true;
+        return false;
+      }
+      return true;
+    });
+    return hidden;
+  }
+
+  bool _insideToolbar(FocusNode node) {
+    var inside = false;
+    node.context?.visitAncestorElements((element) {
+      if (element.widget is AppBar) {
+        inside = true;
+        return false;
+      }
+      return true;
+    });
+    return inside;
+  }
+
+  bool _enterPane() {
     FocusNode? previous = _paneFocus.focusedChild;
     // The embedded Navigator inserts scopes between the pane and its control.
     while (previous is FocusScopeNode) {
       previous = previous.focusedChild;
     }
-    if (previous != null &&
-        previous is! FocusScopeNode &&
-        previous.canRequestFocus) {
+    if (previous != null && previous.canRequestFocus && !_isHidden(previous)) {
       previous.requestFocus();
-      return;
+      return true;
     }
+    // Lazy lists register focus nodes in build order, not visual order. Pick
+    // the topmost real control below the pane toolbar so RIGHT lands on the
+    // page content instead of the first field that happened to be built.
+    FocusNode? first;
+    Rect? firstRect;
     for (final node in _paneFocus.traversalDescendants) {
-      if (node is! FocusScopeNode && node.canRequestFocus) {
-        node.requestFocus();
-        return;
+      if (node is FocusScopeNode ||
+          !node.canRequestFocus ||
+          _isHidden(node) ||
+          _insideToolbar(node)) {
+        continue;
+      }
+      final rect = node.rect;
+      if (rect.isEmpty) continue;
+      if (firstRect == null ||
+          rect.top < firstRect.top - 0.5 ||
+          (rect.top <= firstRect.top + 0.5 && rect.left < firstRect.left)) {
+        first = node;
+        firstRect = rect;
       }
     }
+    if (first == null) return false;
+    first.requestFocus();
+    return true;
   }
 
   bool _moveLeftWithinPane() {
@@ -395,11 +437,28 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: TvFocusScope(
                     node: _paneFocus,
                     onKeyEvent: (node, event) {
-                      if (TvMode.enabled &&
-                          wide &&
-                          (event is KeyDownEvent || event is KeyRepeatEvent) &&
-                          event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-                        if (!_moveLeftWithinPane()) {
+                      if (!TvMode.enabled ||
+                          !wide ||
+                          (event is! KeyDownEvent &&
+                              event is! KeyRepeatEvent)) {
+                        return KeyEventResult.ignored;
+                      }
+                      // Pushing a category moves primary focus to the new
+                      // route's ModalScope. There is no visible control then,
+                      // so the rail is still the current stop: LEFT returns to
+                      // it and RIGHT must enter the page content instead of
+                      // falling through to geometric traversal (which lands on
+                      // the rule page's search field).
+                      final atScope =
+                          FocusManager.instance.primaryFocus is FocusScopeNode;
+                      if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
+                          atScope) {
+                        return _enterPane()
+                            ? KeyEventResult.handled
+                            : KeyEventResult.ignored;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                        if (atScope || !_moveLeftWithinPane()) {
                           _railNode(_selectedCategoryPath).requestFocus();
                         }
                         return KeyEventResult.handled;

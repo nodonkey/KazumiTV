@@ -10,6 +10,7 @@ import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/pages/router.dart';
 import 'package:kazumi/services/platform/tv_mode.dart';
 import 'package:kazumi/services/platform/tv_channel_input.dart';
+import 'package:kazumi/services/platform/tv_navigation.dart';
 import 'package:kazumi/bean/widget/tv_focus_navigation.dart';
 import 'package:kazumi/bean/widget/tv_focusable_surface.dart';
 import 'package:kazumi/bean/widget/tv_desktop_navigation.dart';
@@ -297,6 +298,13 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       tvChannelInputController.cancel();
       return;
     }
+    if (TvMode.enabled && _selectedIndex == 0) {
+      // A ten-foot remote leaves the app with the system Home key. BACK at
+      // the home root rewinds the browse surface instead of terminating.
+      _lastExitPromptAt = null;
+      TvNavigation.homeRequests.value++;
+      return;
+    }
     if (_selectedIndex != 0) {
       final returnFocus =
           TvMode.enabled ? _functionFocusNodes[_selectedIndex] : null;
@@ -522,6 +530,17 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                   if (!event.synthesized) _tvInputEpoch++;
                   if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
                     enterContent();
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                    // The rail is the top edge, but a silent dead key reads as
+                    // a broken remote. Return to the first content row so UP
+                    // has a visible destination on every routed page.
+                    if (_selectedIndex == 0) {
+                      TvNavigation.homeRequests.value++;
+                    } else {
+                      enterContent();
+                    }
                     return KeyEventResult.handled;
                   }
                   if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {

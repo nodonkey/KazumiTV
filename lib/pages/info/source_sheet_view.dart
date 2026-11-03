@@ -66,12 +66,15 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
   final _scrollController = ScrollController();
   final _display = <String, _SourceDisplay>{};
   final _headerKeys = <String, GlobalKey>{};
+  final _firstResultFocus = FocusNode(debugLabel: 'Source sheet first result');
   bool _autoExpansionHandled = false;
+  bool _firstResultFocused = false;
 
   @override
   void initState() {
     super.initState();
     _autoExpandFirstResult();
+    _scheduleFirstResultFocus();
   }
 
   @override
@@ -81,6 +84,7 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
     _display.removeWhere((name, _) => !names.contains(name));
     _headerKeys.removeWhere((name, _) => !names.contains(name));
     _autoExpandFirstResult();
+    _scheduleFirstResultFocus();
   }
 
   void _autoExpandFirstResult() {
@@ -90,9 +94,39 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
     _display[name] = _SourceDisplay.preview;
   }
 
+  void _scheduleFirstResultFocus() {
+    if (!TvMode.enabled ||
+        _firstResultFocused ||
+        widget.firstResultSource == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _firstResultFocused) return;
+      if (widget.firstResultSource == null ||
+          _firstResultFocus.context == null ||
+          !_firstResultFocus.canRequestFocus) {
+        return;
+      }
+      _firstResultFocused = true;
+      _firstResultFocus.requestFocus();
+      final target = _firstResultFocus.context;
+      if (target != null) {
+        await Scrollable.ensureVisible(
+          target,
+          alignment: 0.12,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : splitListMotionDuration,
+          curve: splitListMotionCurve,
+        );
+      }
+    });
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
+    _firstResultFocus.dispose();
     super.dispose();
   }
 
@@ -398,7 +432,9 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
   Widget _buildResult(_SourceSearchGroup group, int index) {
     final theme = Theme.of(context);
     final result = group.results[index];
+    final isFirstResult = index == 0 && group.name == widget.firstResultSource;
     return SplitListRow(
+      focusNode: isFirstResult ? _firstResultFocus : null,
       topRadius: index == 0 ? splitListOuterRadius : splitListInnerRadius,
       bottomRadius: group.results.length == 1
           ? splitListOuterRadius

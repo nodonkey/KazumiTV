@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_focusable_surface.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
+import 'package:kazumi/services/platform/tv_mode.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
 enum MyDestination {
@@ -590,10 +592,10 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
     final duration = reducedMotion
         ? Duration.zero
         : Duration(milliseconds: _pressed ? 150 : 300);
-    return Semantics(
+    final surface = Semantics(
       button: true,
       child: AnimatedScale(
-        scale: _pressed && !reducedMotion ? .97 : 1,
+        scale: _pressed && !reducedMotion && !TvMode.enabled ? .97 : 1,
         duration: duration,
         curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
         child: AnimatedContainer(
@@ -602,7 +604,9 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: widget.color,
-            borderRadius: _pressed ? BorderRadius.circular(16) : widget.radius,
+            borderRadius: _pressed && !TvMode.enabled
+                ? BorderRadius.circular(16)
+                : widget.radius,
           ),
           child: Material(
             type: MaterialType.transparency,
@@ -634,6 +638,15 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
           ),
         ),
       ),
+    );
+    if (!TvMode.enabled) return surface;
+    // The low-alpha ink overlay alone is invisible on saturated tiles; the
+    // remote-control focus ring must read at ten feet.
+    return TvFocusableSurface(
+      onPressed: widget.onTap,
+      borderRadius: widget.radius.topLeft.x,
+      focusScale: 1.02,
+      child: surface,
     );
   }
 }

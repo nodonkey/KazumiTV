@@ -14,6 +14,8 @@ class BangumiTimelineCard extends StatelessWidget {
     required this.onTap,
     this.isWatching = false,
     this.compact = false,
+    this.focusNode,
+    this.onKeyEvent,
   });
 
   final BangumiItem bangumiItem;
@@ -21,6 +23,8 @@ class BangumiTimelineCard extends StatelessWidget {
   final bool isWatching;
   final bool compact;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
+  final FocusOnKeyEventCallback? onKeyEvent;
 
   static final _episodePattern =
       RegExp(r'^\s*([1-9]\d*)\s*[话話集](?=\s*(?:[/／]|$))');
@@ -115,6 +119,8 @@ class BangumiTimelineCard extends StatelessWidget {
     if (!TvMode.enabled) return card;
     return TvFocusableSurface(
       onPressed: onTap,
+      focusNode: focusNode,
+      onKeyEvent: onKeyEvent,
       focusScale: 1,
       borderRadius: _cornerRadius,
       child: card,

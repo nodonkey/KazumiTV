@@ -241,6 +241,61 @@ void main() {
         isNot(contains('TV settings category')));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('TV settings RIGHT after a category switch enters page content',
+      (tester) async {
+    TvMode.setEnabledForTesting(true);
+    addTearDown(() => TvMode.setEnabledForTesting(false));
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final addFocus = FocusNode(debugLabel: 'add rule fixture');
+    final searchFocus = FocusNode(debugLabel: 'rule search fixture');
+    Widget tile(String label) => Center(
+        child:
+            TextButton(autofocus: true, onPressed: () {}, child: Text(label)));
+    final module = createModule(register: (c) {
+      c.route('/settings',
+          child: (_, state) => SettingsPage(location: state.uri.path),
+          children: (sub) {
+            sub.route('/player', child: (_, __) => tile('播放内容'));
+            sub.route('/danmaku', child: (_, __) => tile('弹幕内容'));
+            sub.route('/keyboard', child: (_, __) => tile('操作内容'));
+            sub.route('/plugin',
+                child: (_, __) => Column(children: [
+                      TextButton(
+                          focusNode: addFocus,
+                          onPressed: () {},
+                          child: const Text('添加规则')),
+                      TextField(focusNode: searchFocus),
+                    ]));
+          });
+    });
+    await tester.pumpWidget(ModularApp(
+        module: module,
+        initialRoute: '/settings/player',
+        child: Builder(
+            builder: (context) => MaterialApp.router(
+                routerConfig: ModularApp.routerConfigOf(context)))));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+    }
+    expect(FocusManager.instance.primaryFocus?.debugLabel,
+        'TV settings category /settings/plugin');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus, same(addFocus),
+        reason: 'RIGHT must enter the top content control, not a lower field');
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _Paths extends PathProviderPlatform {

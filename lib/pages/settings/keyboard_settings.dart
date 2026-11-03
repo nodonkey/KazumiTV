@@ -379,7 +379,6 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
                 child: TvFocusableSurface(
                   focusNode: _tvSectionFocusNodes[index],
                   autofocus: index == 0,
-                  highlighted: _tvSection == index,
                   borderRadius: 22,
                   onFocusChange: (focused) {
                     if (focused && _tvSection != index) {

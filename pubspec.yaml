@@ -5,7 +5,7 @@ version: 0.4.6+20667
 
 environment:
   sdk: ">=3.3.4 <4.0.0"
-  flutter: 3.47.3
+  flutter: 3.47.8
 
 dependencies:
   qr_flutter: ^4.1.0

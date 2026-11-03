@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:kazumi/bean/widget/tv_focusable_surface.dart';
 import 'package:kazumi/services/phone_keyboard.dart';
+import 'package:kazumi/services/platform/tv_mode.dart';
 
 class PhoneKeyboardButton extends StatelessWidget {
   const PhoneKeyboardButton({super.key});
@@ -21,10 +23,12 @@ class PhoneKeyboardDialog extends StatefulWidget {
 class _PhoneKeyboardDialogState extends State<PhoneKeyboardDialog> {
   bool _remember = true;
   bool _closing = false;
+  bool _confirming = false;
   bool _waitingForConnection = false;
   void _connectionChanged() {
     if (!_waitingForConnection ||
         _closing ||
+        _confirming ||
         PhoneKeyboard.instance.session?.clientConnected != true) return;
     _closing = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -50,6 +54,71 @@ class _PhoneKeyboardDialogState extends State<PhoneKeyboardDialog> {
     PhoneKeyboard.instance.removeListener(_connectionChanged);
     PhoneKeyboard.instance.leaveControlDialog();
     super.dispose();
+  }
+
+  Future<bool> _confirmStop(String message) async {
+    // Mouse and touch still use the direct action; the remote's flat button
+    // focus is easy to mistake, so destructive stops ask for a second press.
+    if (!TvMode.enabled) return true;
+    _confirming = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          title: const Text('确认操作'),
+          content: Text(message),
+          actions: [
+            _TvActionSurface(
+              autofocus: true,
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: TextButton(
+                autofocus: true,
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('取消'),
+              ),
+            ),
+            _TvActionSurface(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.error,
+                  foregroundColor: colors.onError,
+                  minimumSize: const Size(88, 48),
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('确定'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    _confirming = false;
+    return confirmed == true;
+  }
+
+  Future<void> _stop(PhoneKeyboard keyboard, int count) async {
+    final message = count > 0
+        ? '断开后，已连接的手机将失去遥控。'
+        : keyboard.hasPairing
+            ? '暂停后手机页面将暂时无法连接，可从本页恢复。'
+            : '关闭后手机页面将无法连接，需要重新开启。';
+    if (!await _confirmStop(message) || !mounted) return;
+    _waitingForConnection = false;
+    if (keyboard.hasPairing) {
+      keyboard.pause();
+    } else {
+      keyboard.disconnect();
+    }
+  }
+
+  Future<void> _unpair(PhoneKeyboard keyboard) async {
+    if (!await _confirmStop('取消配对后，已收藏的手机页面会立即失效，需要重新扫码连接。') || !mounted) {
+      return;
+    }
+    _waitingForConnection = false;
+    keyboard.disconnect();
   }
 
   @override
@@ -79,14 +148,20 @@ class _PhoneKeyboardDialogState extends State<PhoneKeyboardDialog> {
                   Text('按浏览器统计；关页、锁屏或断网后约 12 秒更新。',
                       style: Theme.of(context).textTheme.bodySmall),
                   if (url == null && !keyboard.hasPairing)
-                    SwitchListTile(
-                      title: const Text('保留配对 7 天'),
-                      subtitle:
-                          const Text('重新打开电视应用后可用原手机页面连接；电视 IP 改变时需重新扫码。'),
-                      value: _remember,
-                      onChanged: keyboard.starting
+                    _TvActionSurface(
+                      borderRadius: 20,
+                      onPressed: keyboard.starting
                           ? null
-                          : (value) => setState(() => _remember = value),
+                          : () => setState(() => _remember = !_remember),
+                      child: SwitchListTile(
+                        title: const Text('保留配对 7 天'),
+                        subtitle:
+                            const Text('重新打开电视应用后可用原手机页面连接；电视 IP 改变时需重新扫码。'),
+                        value: _remember,
+                        onChanged: keyboard.starting
+                            ? null
+                            : (value) => setState(() => _remember = value),
+                      ),
                     ),
                   if (keyboard.hasPairing)
                     Text(
@@ -104,8 +179,17 @@ class _PhoneKeyboardDialogState extends State<PhoneKeyboardDialog> {
                           child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SelectableText(url,
-                              style: Theme.of(context).textTheme.bodySmall),
+                          // Scaled to one line: the pairing URL has no break
+                          // opportunities and wraps down to a lone final glyph.
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: SelectableText(
+                              url,
+                              maxLines: 1,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Text(keyboard.hasPairing
                               ? '可收藏手机页面，请勿分享网址。断开全部保留配对；取消配对让旧网址失效。'
@@ -113,65 +197,111 @@ class _PhoneKeyboardDialogState extends State<PhoneKeyboardDialog> {
                         ],
                       )),
                     ]),
-                    SwitchListTile(
-                      title: const Text('允许已连接手机读取当前普通输入框文本'),
-                      subtitle: const Text(
-                          '仅本次连接；可能包含 URL 和其中的私人信息。密码与令牌不回读；支持的凭据输入框只能接收新内容。断开后自动关闭。'),
-                      value: keyboard.readTextAllowed,
-                      onChanged: keyboard.setReadTextAllowed,
+                    _TvActionSurface(
+                      borderRadius: 20,
+                      onPressed: () => keyboard
+                          .setReadTextAllowed(!keyboard.readTextAllowed),
+                      child: SwitchListTile(
+                        title: const Text('允许已连接手机读取当前普通输入框文本'),
+                        subtitle: const Text(
+                            '仅本次连接；可能包含 URL 和其中的私人信息。密码与令牌不回读；支持的凭据输入框只能接收新内容。断开后自动关闭。'),
+                        value: keyboard.readTextAllowed,
+                        onChanged: keyboard.setReadTextAllowed,
+                      ),
                     ),
                   ] else if (keyboard.error != null)
                     Text(keyboard.error!),
                   if (keyboard.starting) const CircularProgressIndicator(),
                 ])),
             actions: [
-              TextButton(
-                  autofocus: true,
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('返回电视')),
+              _TvActionSurface(
+                autofocus: true,
+                onPressed: () => Navigator.of(context).pop(),
+                child: TextButton(
+                    autofocus: true,
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回电视')),
+              ),
               if (url == null)
-                FilledButton(
-                    onPressed: keyboard.starting
-                        ? null
-                        : () {
-                            _waitingForConnection = true;
-                            if (keyboard.hasPairing) {
-                              keyboard.restore(resume: true);
-                            } else {
-                              keyboard.start(remember: _remember);
-                            }
-                          },
-                    child: Text(keyboard.hasPairing
-                        ? '恢复连接'
-                        : _remember
-                            ? '开启 7 天配对'
-                            : '开启临时连接')),
+                _TvActionSurface(
+                  onPressed: keyboard.starting
+                      ? null
+                      : () {
+                          _waitingForConnection = true;
+                          if (keyboard.hasPairing) {
+                            keyboard.restore(resume: true);
+                          } else {
+                            keyboard.start(remember: _remember);
+                          }
+                        },
+                  child: FilledButton(
+                      onPressed: keyboard.starting
+                          ? null
+                          : () {
+                              _waitingForConnection = true;
+                              if (keyboard.hasPairing) {
+                                keyboard.restore(resume: true);
+                              } else {
+                                keyboard.start(remember: _remember);
+                              }
+                            },
+                      child: Text(keyboard.hasPairing
+                          ? '恢复连接'
+                          : _remember
+                              ? '开启 7 天配对'
+                              : '开启临时连接')),
+                ),
               if (url != null)
-                FilledButton(
-                    onPressed: keyboard.starting
-                        ? null
-                        : () {
-                            _waitingForConnection = false;
-                            if (keyboard.hasPairing) {
-                              keyboard.pause();
-                            } else {
-                              keyboard.disconnect();
-                            }
-                          },
-                    child: Text(count > 0
-                        ? '断开全部（$count）'
-                        : keyboard.hasPairing
-                            ? '暂停遥控'
-                            : '关闭连接入口')),
+                _TvActionSurface(
+                  onPressed:
+                      keyboard.starting ? null : () => _stop(keyboard, count),
+                  child: FilledButton(
+                      onPressed: keyboard.starting
+                          ? null
+                          : () => _stop(keyboard, count),
+                      child: Text(count > 0
+                          ? '断开全部（$count）'
+                          : keyboard.hasPairing
+                              ? '暂停遥控'
+                              : '关闭连接入口')),
+                ),
               if (keyboard.hasPairing)
-                TextButton(
-                    onPressed: keyboard.starting
-                        ? null
-                        : () {
-                            _waitingForConnection = false;
-                            keyboard.disconnect();
-                          },
-                    child: const Text('取消配对')),
+                _TvActionSurface(
+                  onPressed: keyboard.starting ? null : () => _unpair(keyboard),
+                  child: TextButton(
+                      onPressed:
+                          keyboard.starting ? null : () => _unpair(keyboard),
+                      child: const Text('取消配对')),
+                ),
             ]);
       });
+}
+
+/// Gives dialog rows and buttons the same remote-control focus ring the rest
+/// of the TV UI uses; disabled actions stay out of traversal.
+class _TvActionSurface extends StatelessWidget {
+  const _TvActionSurface({
+    required this.child,
+    required this.onPressed,
+    this.autofocus = false,
+    this.borderRadius = 28,
+  });
+
+  final Widget child;
+  final VoidCallback? onPressed;
+  final bool autofocus;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final action = onPressed;
+    if (!TvMode.enabled || action == null) return child;
+    return TvFocusableSurface(
+      onPressed: action,
+      autofocus: autofocus,
+      borderRadius: borderRadius,
+      focusScale: 1.02,
+      child: child,
+    );
+  }
 }

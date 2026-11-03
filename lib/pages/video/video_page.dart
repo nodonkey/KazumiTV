@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:mobx/mobx.dart' as mobx;
@@ -41,7 +43,6 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/services/platform/tv_mode.dart';
 import 'package:kazumi/bean/widget/tv_player_side_panel.dart';
-import 'package:kazumi/bean/widget/tv_idle_dismiss.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({
@@ -73,12 +74,14 @@ class _VideoPageState extends State<VideoPage>
   HistoryController get historyController => widget.historyController;
   DownloadController get downloadController => widget.downloadController;
   late bool playResume;
-  bool showDebugLog = false;
-  List<String> webviewLogLines = [];
-  StreamSubscription<String>? _logSubscription;
   final FocusNode keyboardFocus = FocusNode(
     debugLabel: 'Video player shortcut scope',
   );
+  final _errorRetryFocus = FocusNode(debugLabel: 'Player error retry');
+  final _errorEpisodeFocus = FocusNode(debugLabel: 'Player error episodes');
+  final _errorSourceFocus = FocusNode(debugLabel: 'Player error source');
+  bool _errorFocusScheduled = false;
+  late final mobx.ReactionDisposer _immersiveListener;
 
   final _episodePanelKey = GlobalKey<EpisodeSelectionPanelState>();
   late AnimationController animation;
@@ -145,6 +148,30 @@ class _VideoPageState extends State<VideoPage>
       (_) => videoPageController.isPip,
       (_) => _syncFullscreenWithWindowShape(),
     );
+    _enterImmersivePlayback();
+    // Leaving fullscreen through the player menu shows the system bars again.
+    // The player page itself stays immersive until the route is popped.
+    _immersiveListener = mobx.reaction<bool>(
+      (_) => videoPageController.isFullscreen,
+      (fullscreen) {
+        if (!fullscreen) {
+          _enterImmersivePlayback();
+        }
+      },
+    );
+  }
+
+  bool get _canHideSystemBars => TvMode.enabled && Platform.isAndroid;
+
+  void _enterImmersivePlayback() {
+    if (!_canHideSystemBars) return;
+    unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
+  }
+
+  void _restoreSystemBars() {
+    if (!_canHideSystemBars) return;
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   }
 
   bool get _windowIsLandscape {
@@ -270,17 +297,6 @@ class _VideoPageState extends State<VideoPage>
     }
     _showTabBodyImmediately();
 
-    _logSubscription = videoPageController.logStream.listen((log) {
-      if (mounted) {
-        setState(() {
-          webviewLogLines.add(log);
-          if (webviewLogLines.length > 100) {
-            webviewLogLines.removeAt(0);
-          }
-        });
-      }
-    });
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -304,10 +320,9 @@ class _VideoPageState extends State<VideoPage>
     try {
       _syncChatSubscription?.cancel();
     } catch (_) {}
-    try {
-      _logSubscription?.cancel();
-    } catch (_) {}
     _pipModeListener();
+    _immersiveListener();
+    _restoreSystemBars();
     // Modular disposes the controller and its log subscription with the route.
     if (!isDesktop()) {
       try {
@@ -316,6 +331,9 @@ class _VideoPageState extends State<VideoPage>
     }
     DisplayModeService.unlockScreenRotation();
     keyboardFocus.dispose();
+    _errorRetryFocus.dispose();
+    _errorEpisodeFocus.dispose();
+    _errorSourceFocus.dispose();
     tabController.dispose();
     TimedShutdownService().cancel();
     super.dispose();
@@ -332,24 +350,6 @@ class _VideoPageState extends State<VideoPage>
     videoPageController.handleOnExitFullScreen();
   }
 
-  void hideDebugConsole() {
-    setState(() {
-      showDebugLog = false;
-    });
-  }
-
-  void switchDebugConsole() {
-    setState(() {
-      showDebugLog = !showDebugLog;
-    });
-  }
-
-  void clearWebviewLog() {
-    setState(() {
-      webviewLogLines.clear();
-    });
-  }
-
   Future<void> changeEpisode(
     int episode, {
     int currentRoad = 0,
@@ -358,8 +358,6 @@ class _VideoPageState extends State<VideoPage>
     if (!mounted || _isClosing) {
       return;
     }
-    clearWebviewLog();
-    hideDebugConsole();
     await videoPageController.changeEpisode(
       episode,
       currentRoad: currentRoad,
@@ -381,8 +379,6 @@ class _VideoPageState extends State<VideoPage>
 
   Future<void> _retryCurrentEpisode() async {
     if (!mounted || _isClosing) return;
-    clearWebviewLog();
-    hideDebugConsole();
     _closeTabBodyAnimated();
     await videoPageController.retryCurrentEpisode(
         playerController: playerController);
@@ -570,6 +566,9 @@ class _VideoPageState extends State<VideoPage>
             onBack: () => onBackPressed(context),
             child: Scaffold(
               appBar: null,
+              // The video route owns a black surface; insets and letterboxing
+              // must never expose the light theme behind the player.
+              backgroundColor: Colors.black,
               body: SafeArea(
                 top: !videoPageController.isFullscreen && !isPip,
                 bottom: false,
@@ -653,14 +652,7 @@ class _VideoPageState extends State<VideoPage>
                   ? 420
                   : MediaQuery.sizeOf(context).width / 3),
       child: TvMode.enabled
-          ? ListenableBuilder(
-              listenable: tabController,
-              builder: (context, _) => TvIdleDismiss(
-                enabled: _tabBodyTargetVisible && tabController.index == 0,
-                onDismiss: _closeTabBodyAnimated,
-                child: TvPlayerSidePanel(child: tabBody),
-              ),
-            )
+          ? TvPlayerSidePanel(child: tabBody)
           : Material(
               color: Theme.of(context).colorScheme.surface,
               borderRadius: const BorderRadiusDirectional.only(
@@ -741,6 +733,62 @@ class _VideoPageState extends State<VideoPage>
     }
   }
 
+  void _scheduleErrorActionFocus() {
+    if (!TvMode.enabled || _errorFocusScheduled) return;
+    _errorFocusScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _errorFocusScheduled = false;
+      if (!mounted ||
+          videoPageController.errorMessage == null ||
+          videoPageController.showTabBody ||
+          KazumiDialog.observer.hasKazumiDialog ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      if (_errorRetryFocus.context != null &&
+          _errorRetryFocus.canRequestFocus) {
+        _errorRetryFocus.requestFocus();
+      }
+    });
+  }
+
+  Widget _buildErrorActions() {
+    final offline = videoPageController.isOfflineMode;
+    return _TvErrorActionLoop(
+      nodes: [
+        _errorRetryFocus,
+        _errorEpisodeFocus,
+        if (!offline) _errorSourceFocus,
+      ],
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          StateActionButton(
+            focusNode: _errorRetryFocus,
+            onPressed: _retryCurrentEpisode,
+            text: '重试当前集',
+            icon: Icons.refresh_rounded,
+          ),
+          StateActionButton.tonal(
+            focusNode: _errorEpisodeFocus,
+            onPressed: _showEpisodeGuide,
+            text: offline ? '选择集数' : '选集 / 换线路',
+            icon: Icons.video_library_outlined,
+          ),
+          if (!offline)
+            StateActionButton.tonal(
+              focusNode: _errorSourceFocus,
+              onPressed: _selectSource,
+              text: '更换播放源',
+              icon: Icons.swap_horiz_rounded,
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget get playerBody {
     final bool playerLoading = playerController.playback.loading;
     return Stack(
@@ -773,27 +821,15 @@ class _VideoPageState extends State<VideoPage>
                     builder: (context) {
                       final errorMessage = videoPageController.errorMessage;
                       if (errorMessage != null) {
+                        _scheduleErrorActionFocus();
                         return MediaErrorWidget(
                           title: '暂时无法播放',
                           errMsg: errorMessage,
                           icon: Icons.videocam_off_outlined,
-                          onRetry: _retryCurrentEpisode,
-                          retryText: '重试当前集',
-                          actions: [
-                            StateActionButton.tonal(
-                              onPressed: _showEpisodeGuide,
-                              text: videoPageController.isOfflineMode
-                                  ? '选择集数'
-                                  : '选集 / 换线路',
-                              icon: Icons.video_library_outlined,
-                            ),
-                            if (!videoPageController.isOfflineMode)
-                              StateActionButton.tonal(
-                                onPressed: _selectSource,
-                                text: '更换播放源',
-                                icon: Icons.swap_horiz_rounded,
-                              ),
-                          ],
+                          // The explicit TV loop below owns every recovery
+                          // action, including retry, so arrows cannot escape
+                          // into the toolbar.
+                          actions: [_buildErrorActions()],
                         );
                       }
                       return Center(
@@ -828,28 +864,6 @@ class _VideoPageState extends State<VideoPage>
                     },
                   ),
                 ),
-              Visibility(
-                visible: !_isClosing &&
-                    (videoPageController.loading || playerLoading) &&
-                    showDebugLog,
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.99),
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: webviewLogLines.length,
-                      itemBuilder: (context, index) {
-                        return Text(
-                          webviewLogLines.isEmpty ? '' : webviewLogLines[index],
-                          style: const TextStyle(color: Colors.white),
-                          textAlign: TextAlign.center,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
               Stack(
                 children: [
                   Positioned(
@@ -894,17 +908,6 @@ class _VideoPageState extends State<VideoPage>
                                 color: Colors.white,
                               ),
                             ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              showDebugLog
-                                  ? Icons.bug_report
-                                  : Icons.bug_report_outlined,
-                              color: Colors.white,
-                            ),
-                            onPressed: () {
-                              switchDebugConsole();
-                            },
                           ),
                         ],
                       ),
@@ -980,8 +983,6 @@ class _VideoPageState extends State<VideoPage>
             onEpisodeSelected: (episode, road) {
               if (!mounted || _isClosing) return;
               _closeTabBodyAnimated();
-              clearWebviewLog();
-              hideDebugConsole();
               videoPageController.selectEpisode(episode,
                   road: road, playerController: playerController);
             },
@@ -1024,6 +1025,49 @@ class _VideoPageState extends State<VideoPage>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Keeps recovery actions inside one closed TV loop so a stray arrow cannot
+/// move focus into the player toolbar behind the error surface.
+class _TvErrorActionLoop extends StatelessWidget {
+  const _TvErrorActionLoop({required this.nodes, required this.child});
+
+  final List<FocusNode> nodes;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!TvMode.enabled || nodes.length < 2) return child;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (_, event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        final key = event.logicalKey;
+        final int delta;
+        if (key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowUp) {
+          delta = -1;
+        } else if (key == LogicalKeyboardKey.arrowRight ||
+            key == LogicalKeyboardKey.arrowDown) {
+          delta = 1;
+        } else {
+          return KeyEventResult.ignored;
+        }
+        final focused = FocusManager.instance.primaryFocus;
+        final index = nodes.indexWhere((node) => node == focused);
+        if (index < 0) return KeyEventResult.ignored;
+        final target = nodes[(index + delta + nodes.length) % nodes.length];
+        if (target.context != null && target.canRequestFocus) {
+          target.requestFocus();
+        }
+        return KeyEventResult.handled;
+      },
+      child: child,
     );
   }
 }

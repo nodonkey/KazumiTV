@@ -13,11 +13,16 @@ class TvSearchEntry extends StatefulWidget {
     required this.controller,
     required this.onSubmitted,
     this.suggestionsBuilder,
+    this.onKeyEvent,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onSubmitted;
   final WidgetBuilder? suggestionsBuilder;
+
+  /// Lets the host claim navigation keys (for example DOWN into results)
+  /// before the surface treats them as activation.
+  final FocusOnKeyEventCallback? onKeyEvent;
 
   @override
   State<TvSearchEntry> createState() => _TvSearchEntryState();
@@ -60,6 +65,7 @@ class _TvSearchEntryState extends State<TvSearchEntry> {
         borderRadius: 28,
         focusScale: 1,
         onPressed: _open,
+        onKeyEvent: widget.onKeyEvent,
         child: SearchBar(
           controller: widget.controller,
           readOnly: true,
@@ -103,40 +109,52 @@ class _SearchEditorState extends State<_SearchEditor> {
         widget.onPhoneConfirm(editor.text);
         Navigator.of(context).pop();
       },
-      child: AlertDialog(
-        title: const Text('搜索番剧'),
-        scrollable: true,
-        content: SizedBox(
-          width: 560,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TvTextEditingShortcuts(
-                child: TextField(
-              key: const Key('tv-search-editor'),
-              controller: editor,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (value) => Navigator.of(context).pop(value),
-              decoration: const InputDecoration(hintText: '输入名称或搜索条件'),
-            )),
-            if (widget.suggestionsBuilder != null)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 140),
-                child: SingleChildScrollView(
-                  child: widget.suggestionsBuilder!(context),
-                ),
-              ),
-          ]),
+      child: Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // A single strip stays above the landscape keyboard; the old
+                // titled dialog was taller than the remaining viewport.
+                Row(children: [
+                  Expanded(
+                    child: TvTextEditingShortcuts(
+                        child: TextField(
+                      key: const Key('tv-search-editor'),
+                      controller: editor,
+                      autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (value) => Navigator.of(context).pop(value),
+                      decoration: const InputDecoration(hintText: '输入名称或搜索条件'),
+                    )),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: '取消',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                  const PhoneKeyboardButton(),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(editor.text),
+                    child: const Text('检索'),
+                  ),
+                ]),
+                if (widget.suggestionsBuilder != null)
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: widget.suggestionsBuilder!(context),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          const PhoneKeyboardButton(),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(editor.text),
-            child: const Text('检索'),
-          ),
-        ],
       ));
 }
