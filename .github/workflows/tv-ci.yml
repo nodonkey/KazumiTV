@@ -24,14 +24,14 @@ jobs:
       - uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0
         with:
           channel: stable
-          flutter-version: '3.47.3'
+          flutter-version: '3.47.8'
           cache: true
       - name: Verify exact Flutter revision
         run: |
           # First launch may print bootstrap output before the machine JSON.
           flutter --version
           flutter --version --machine > "$RUNNER_TEMP/flutter-sdk.json"
-          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'flutter-sdk.json').read_text()); assert d['frameworkRevision']=='e8113bf45620cbeb8aff64947ee4c93e16adb4cf' and d['frameworkVersion']=='3.47.3'"
+          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'flutter-sdk.json').read_text()); assert d['frameworkRevision']=='737ba8f885dc774b53b442759999a312c9461e4e' and d['frameworkVersion']=='3.47.8'"
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze --no-fatal-infos --fatal-warnings
       - run: flutter test --concurrency=2
@@ -63,15 +63,23 @@ jobs:
       - uses: subosito/flutter-action@44ac965b96f18d999802d4b807e3256d5a3f9fa1 # v2.16.0
         with:
           channel: stable
-          flutter-version: '3.47.3'
+          flutter-version: '3.47.8'
           cache: true
       - name: Verify exact Flutter revision
         run: |
           # First launch may print bootstrap output before the machine JSON.
           flutter --version
           flutter --version --machine > "$RUNNER_TEMP/flutter-sdk.json"
-          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'flutter-sdk.json').read_text()); assert d['frameworkRevision']=='e8113bf45620cbeb8aff64947ee4c93e16adb4cf' and d['frameworkVersion']=='3.47.3'"
+          python -c "import json,os,pathlib; d=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'flutter-sdk.json').read_text()); assert d['frameworkRevision']=='737ba8f885dc774b53b442759999a312c9461e4e' and d['frameworkVersion']=='3.47.8'"
       - run: flutter pub get --enforce-lockfile
+      - name: Resolve app version from pubspec
+        id: app-version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
+          test -n "$version"
+          echo "name=${version%%+*}" >> "$GITHUB_OUTPUT"
+          echo "code=${version##*+}" >> "$GITHUB_OUTPUT"
       - name: Build isolated TV candidate (public test certificate; never a public release)
         run: >-
           flutter build apk --release --pub --flavor tv
@@ -80,7 +88,7 @@ jobs:
           --android-project-arg=kazumiTvPublicTestSigning=true
           --android-project-arg=kazumiTvLabel=KazumiTV-QA6
           --target-platform ${{ matrix.target }} --split-per-abi
-          --build-name=0.4.5-qa.2 --build-number=20559
+          --build-name=${{ steps.app-version.outputs.name }} --build-number=${{ steps.app-version.outputs.code }}
           --dart-define=KAZUMI_TV_PERF=false --dart-define=KAZUMI_TV_FIXED_SURFACES=true
       - name: Lockfile must remain unchanged after plugin regeneration
         run: git diff --exit-code -- pubspec.lock
@@ -91,7 +99,7 @@ jobs:
             --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" \
             --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
             --application-id com.znbsf.kazumi.fluttertv.remoteqa --abi "$ABI" \
-            --build-number 20559 --version-name 0.4.5-qa.2 --source-sha "$GITHUB_SHA" \
+            --build-number ${{ steps.app-version.outputs.code }} --version-name ${{ steps.app-version.outputs.name }} --source-sha "$GITHUB_SHA" \
             --certificate-sha256 131f00a5a75f3e587ece7ef86a96a21c5971db5717123890121dc55363523ea1 \
             --output "build/tv-receipts/$ABI.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
