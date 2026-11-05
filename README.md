@@ -21,7 +21,7 @@
 | `KazumiTV-0.4.6-arm64.apk` | 64 位电视 / 盒子交付包（arm64-v8a） | `3e691fb9a300ae30025fe44444078d70f9f59717d3e2e5e3d00288073fa80e2e` |
 | `KazumiTV-0.4.6-arm32.apk` | 32 位电视 / 盒子交付包（armeabi-v7a） | `1cb4bb7fc5242dc9d89e56302cf2c4ce5148ec6be540bf5122f732fe11b859c2` |
 | `KazumiTV-0.4.6-x86_64-debug.apk` | x86_64 模拟器调试，请勿安装到电视 | `c9fb0f45e349bb344fa7470d0d2cc090d374c2ab1774e676ba313848ca8c0800` |
-| `KazumiTV-0.4.6-tv-arm64.zip` | arm64 交付包 + 使用说明 + 校验文件的打包 | `d3ea2d5238f46ceec1cba78647e62eeaa4141b9c2750dfa38011d06487735183` |
+| `KazumiTV-0.4.6-tv-arm64.zip` | arm64 交付包 + 使用说明 + 校验文件的打包 | `be0f541bf4eeaf1487078edb611266a27ba42142dadc2088db978ad4b7f61299` |
 | `SHA256SUMS.txt` | 上述 APK 的校验清单 | — |
 
 Windows 可用 `certutil -hashfile <文件> SHA256` 核对。
