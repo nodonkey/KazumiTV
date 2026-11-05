@@ -266,7 +266,7 @@
 | P2-14 | 搜索结果 DOWN 稳定性/头部滚出 | 固定搜索框与“搜索结果/排序/筛选”行（411dp 下阈值 280dp），DOWN 直达第 1 条 | 通过：网格内部滚动，头部与排序行保持可见，焦点落在第 1 条 | [45](screenshots/qa-20261102/fixed/45-p2-14-pinned-header-down1.png) |
 | P3-1 | 功能栏 UP 无响应 | UP 从功能栏回到内容区首个海报 | 通过：UP 后海报 1 显示焦点环 | [53](screenshots/qa-20261102/fixed/53-p3-1-rail-up-to-poster.png) |
 | P3-2 | 状态栏重叠、白色 letterbox | 播放页沉浸式，letterbox 统一黑色 | 通过：顶部状态栏隐藏，视频区域纯黑无边 | [35](screenshots/qa-20261102/fixed/35-p3-2-player-black-letterbox-immersive.png) |
-| P3-3 | 主页双 BACK 退出应用 | 主页 BACK 不再触发退出 | 通过：连续两次 BACK 后应用仍在前台，焦点保留在海报 | [54](screenshots/qa-20261102/fixed/54-p3-3-home-double-back-stays.png) |
+| P3-3 | 主页双 BACK 退出应用 | 曾改为主页 BACK 不退出；2026-11-04 按真机反馈恢复为首次 BACK 提示、2 秒内再按退出 | 组件测试通过；待真机复测 | [54](screenshots/qa-20261102/fixed/54-p3-3-home-double-back-stays.png)（旧行为） |
 
 说明：P1-1、P1-2、P2-9、P2-10、P3-2 的复测证据取自修复完成后的 instrumented 构建；最终 clean 构建只重新编译了 `search_page.dart` 与 `rule_dialogs.dart`，上述文件未再改动，行为一致。其余 14 项均在最终 clean 构建上重新走查。
 
@@ -330,3 +330,4 @@
 - 2026-11-02：完成全模块测试与取证，新增本报告与 `docs/screenshots/qa-20261102/*.png`（25 张）。
 - 2026-11-03：修复 19 项问题并移除 QA 调试代码；重新构建 clean debug 包复测，新增 `docs/screenshots/qa-20261102/fixed/26–63`（38 张）与“修复后回归记录”。复测结束后同步刷新 `dist/`：重建 arm64 交付包、更新调试包、`README-使用说明.md`、`local-changes.diff`、`SHA256SUMS.txt` 与 `KazumiTV-0.4.6-tv-arm64.zip`。复测结束时应用停留在个人中心，未安装/卸载规则，未更改硬件解码/渲染器设置，手机遥控已恢复配对。
 - 2026-11-03：修复复测新发现的“同集换源”88px 溢出，新增组件测试；未重新构建或发布，`dist/` 与 `v0.4.6-r2` 仍对应修复前源码。
+- 2026-11-04：按真机反馈恢复 TV 主页的退出路径（首次 BACK 提示、2 秒内再按退出），新增 `test/tv_home_back_exit_test.dart`；重建 arm64/arm32 交付包与 32 位安装包说明。真机仅确认 32 位包可安装启动，退出修复本身尚未在设备上复测。

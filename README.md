@@ -18,17 +18,20 @@
 
 | 文件 | 用途 | SHA256 |
 | --- | --- | --- |
-| `KazumiTV-0.4.6-arm64.apk` | 电视 / 盒子交付包（arm64-v8a） | `4e93c0958960fe2c63b1980f11187546670bb733eea0aa25d580a6daf88d5e91` |
-| `KazumiTV-0.4.6-x86_64-debug.apk` | x86_64 模拟器调试，请勿安装到电视 | `77966b7949fa18c70b31d18c003aba6bc486f5f95cdae7c6d107f82714007a01` |
-| `KazumiTV-0.4.6-tv-arm64.zip` | 交付包 + 使用说明 + 校验文件的打包 | 见 Release 附件 |
+| `KazumiTV-0.4.6-arm64.apk` | 64 位电视 / 盒子交付包（arm64-v8a） | `3e691fb9a300ae30025fe44444078d70f9f59717d3e2e5e3d00288073fa80e2e` |
+| `KazumiTV-0.4.6-arm32.apk` | 32 位电视 / 盒子交付包（armeabi-v7a） | `1cb4bb7fc5242dc9d89e56302cf2c4ce5148ec6be540bf5122f732fe11b859c2` |
+| `KazumiTV-0.4.6-x86_64-debug.apk` | x86_64 模拟器调试，请勿安装到电视 | `c9fb0f45e349bb344fa7470d0d2cc090d374c2ab1774e676ba313848ca8c0800` |
+| `KazumiTV-0.4.6-tv-arm64.zip` | arm64 交付包 + 使用说明 + 校验文件的打包 | `d3ea2d5238f46ceec1cba78647e62eeaa4141b9c2750dfa38011d06487735183` |
 | `SHA256SUMS.txt` | 上述 APK 的校验清单 | — |
 
 Windows 可用 `certutil -hashfile <文件> SHA256` 核对。
 
 - 包名：`com.si.kazumitv`（与官方 Kazumi 共存，不会覆盖）
-- 版本：0.4.6（versionCode 20667）
+- 版本：0.4.6（arm64/调试包 versionCode 20667；arm32 拆包为 206671）
 - 最低系统：Android 7.0（API 24）
 - 签名：Android 调试证书，适合个人侧载，不适合上架应用商店
+- 不确定电视位数时优先安装 `arm32`：`arm64` 包虽然带部分 32 位插件库，
+  但 Flutter 运行时只有 64 位，在 32 位系统上会启动闪退
 
 ## 本次修复
 
@@ -47,12 +50,14 @@ Windows 可用 `certutil -hashfile <文件> SHA256` 核对。
 - **设置 / 规则**：返回侧栏后焦点残留；规则管理 RIGHT 落到底部搜索框；
   添加规则弹窗第二项被遮挡。
 - **手机遥控**：焦点提示弱、易误触“暂停遥控”；URL 单字符断行。
-- **导航**：功能栏 UP 无响应；主页连续 BACK 退出应用。
+- **导航**：功能栏 UP 无响应；主页 BACK 无法退出（已恢复为“再按一次退出应用”）。
 
 复测在移除全部 QA 调试代码后的 clean 构建上完成，19 项均通过。
-复测另发现“同集换源”弹窗底部溢出 88px。该问题已在源码中修复
-（选项区可滚动、底部操作固定，新增 4 项组件测试），但尚未重新构建
-安装包或设备复测，记录在回归报告中。
+复测另发现“同集换源”弹窗底部溢出 88px，已在源码中修复（选项区可滚动、
+底部操作固定，新增 4 项组件测试）。2026-11-04 根据真机反馈恢复了 TV
+主页的退出路径：第一次 BACK 提示，2 秒内再按退出，新增组件测试。
+两项修复均已重新构建安装包（2026-11-05 重建 arm64 / arm32 / x86_64 调试包），
+但尚未在设备上复测。
 
 ## 可以做什么
 
@@ -86,6 +91,15 @@ flutter build apk --release --flavor tv \
   --dart-define=KAZUMI_TV_PERF=false \
   --dart-define=KAZUMI_TV_FIXED_SURFACES=true
 
+# 32 位电视交付包（armeabi-v7a，ABI 拆包）
+flutter build apk --release --flavor tv \
+  --android-project-arg=kazumiTv=true \
+  --android-project-arg=kazumiTvApplicationId=com.si.kazumitv \
+  --android-project-arg=kazumiTvLabel=KazumiTV \
+  --split-per-abi --target-platform android-arm \
+  --dart-define=KAZUMI_TV_PERF=false \
+  --dart-define=KAZUMI_TV_FIXED_SURFACES=true
+
 # x86_64 模拟器调试包
 flutter build apk --debug --flavor tv \
   --android-project-arg=kazumiTv=true \
@@ -107,7 +121,8 @@ flutter build apk --debug --flavor tv \
 
 ```bash
 adb connect <电视IP>:5555
-adb install -r KazumiTV-0.4.6-arm64.apk
+adb install -r KazumiTV-0.4.6-arm64.apk   # 64 位电视
+adb install -r KazumiTV-0.4.6-arm32.apk   # 32 位电视/盒子
 ```
 
 也可将 APK 拷到 U 盘，用电视文件管理器安装。

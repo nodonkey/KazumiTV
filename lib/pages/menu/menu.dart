@@ -298,13 +298,6 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       tvChannelInputController.cancel();
       return;
     }
-    if (TvMode.enabled && _selectedIndex == 0) {
-      // A ten-foot remote leaves the app with the system Home key. BACK at
-      // the home root rewinds the browse surface instead of terminating.
-      _lastExitPromptAt = null;
-      TvNavigation.homeRequests.value++;
-      return;
-    }
     if (_selectedIndex != 0) {
       final returnFocus =
           TvMode.enabled ? _functionFocusNodes[_selectedIndex] : null;
